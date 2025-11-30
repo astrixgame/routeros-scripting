@@ -45,9 +45,24 @@ Static routing gives administrators complete control over traffic flow and is es
 
 ### Administrative distance values
 
+Standard RouterOS distance values for route preference:
+
 {% code overflow="wrap" %}
 ```bash
-# Default distance values in RouterOS
+# Default administrative distance values in RouterOS v7+
+# Connected interfaces: 0 (always preferred)
+# Static routes: 1 (default for manually configured routes)
+# OSPF: 110 (Open Shortest Path First)
+# RIP: 120 (Routing Information Protocol)
+# BGP: 200 (Border Gateway Protocol - lowest preference)
+
+# Custom distance examples
+/ip route add dst-address=192.168.1.0/24 gateway=10.0.0.1 distance=1 comment="Primary path"
+/ip route add dst-address=192.168.1.0/24 gateway=10.0.0.2 distance=5 comment="Backup path"
+/ip route add dst-address=192.168.1.0/24 gateway=10.0.0.3 distance=10 comment="Last resort path"
+
+# View distance values for installed routes
+/ip route print detail where active=yes
 connected = 0     # Directly connected networks
 static = 1        # Static routes  
 OSPF = 110        # OSPF routes
@@ -118,19 +133,87 @@ Routes to subnets and network ranges:
 
 ### Multiple paths and redundancy
 
-Configure primary and backup routes:
+Configure primary and backup routes for high availability:
 
 {% code overflow="wrap" %}
 ```bash
 # Primary path to remote network
-/ip route add dst-address=192.168.10.0/24 gateway=192.168.1.1 distance=1 comment="Primary path to remote site"
+/ip route add dst-address=192.168.10.0/24 gateway=192.168.1.1 distance=1 \
+    target-scope=30 comment="Primary path to remote site"
 
-# Backup path with higher distance
-/ip route add dst-address=192.168.10.0/24 gateway=192.168.2.1 distance=5 comment="Backup path to remote site"
+# Backup path with higher distance (automatic failover)
+/ip route add dst-address=192.168.10.0/24 gateway=192.168.2.1 distance=5 \
+    target-scope=30 comment="Backup path to remote site"
 
-# Alternative: Same distance for load balancing
+# Multiple default routes for internet redundancy
+/ip route add dst-address=0.0.0.0/0 gateway=203.0.113.1 distance=1 \
+    target-scope=30 comment="Primary ISP"
+/ip route add dst-address=0.0.0.0/0 gateway=203.0.114.1 distance=2 \
+    target-scope=30 comment="Backup ISP"
+
+# Load balancing with equal distance (ECMP)
 /ip route add dst-address=192.168.20.0/24 gateway=192.168.1.1 distance=1 comment="Load balanced path 1"
 /ip route add dst-address=192.168.20.0/24 gateway=192.168.1.2 distance=1 comment="Load balanced path 2"
+
+# Verify route installation and active paths
+/ip route print where dst-address=192.168.10.0/24
+/ip route print where active=yes and dst-address=0.0.0.0/0
+```
+{% endcode %}
+
+### Gateway monitoring and health checks
+
+Automatic route manipulation based on gateway health:
+
+{% code overflow="wrap" %}
+```bash
+# Route with gateway reachability checking
+/ip route add dst-address=192.168.50.0/24 gateway=192.168.1.10 \
+    distance=1 target-scope=30 comment="Route with health monitoring"
+
+# Configure netwatch to monitor gateway health
+/tool netwatch add host=192.168.1.10 timeout=2s interval=10s \
+    up-script="/log info \"Gateway 192.168.1.10 is UP\"" \
+    down-script="/log warning \"Gateway 192.168.1.10 is DOWN\"; \
+                /ip route disable [find gateway=192.168.1.10]" \
+    comment="Monitor primary gateway"
+
+# Alternative: Use scope for automatic route deactivation
+/ip route add dst-address=10.0.0.0/8 gateway=172.16.1.1 \
+    distance=1 target-scope=10 comment="Route deactivates if gateway unreachable"
+    
+# Scope values:
+# target-scope=10: Check if gateway is directly reachable
+# target-scope=30: Check if gateway responds to ping (default)
+# target-scope=200: Use gateway even if unreachable (not recommended)
+```
+{% endcode %}
+
+### Route summarization
+
+Efficient routing table management:
+
+{% code overflow="wrap" %}
+```bash
+# Instead of multiple specific routes:
+# /ip route add dst-address=192.168.1.0/24 gateway=10.0.0.1
+# /ip route add dst-address=192.168.2.0/24 gateway=10.0.0.1  
+# /ip route add dst-address=192.168.3.0/24 gateway=10.0.0.1
+# /ip route add dst-address=192.168.4.0/24 gateway=10.0.0.1
+
+# Use summarized route (covers 192.168.0.0 to 192.168.255.255)
+/ip route add dst-address=192.168.0.0/16 gateway=10.0.0.1 \
+    comment="Summarized route for all 192.168.x.x networks"
+
+# Hierarchical routing with summary and specific routes
+/ip route add dst-address=10.0.0.0/8 gateway=172.16.1.1 distance=10 \
+    comment="Summary route for all 10.x.x.x networks"
+/ip route add dst-address=10.1.0.0/16 gateway=172.16.1.2 distance=1 \
+    comment="Specific route for 10.1.x.x (preferred over summary)"
+
+# Verify longest prefix match behavior
+/tool traceroute 10.1.1.1  # Should use specific route
+/tool traceroute 10.2.1.1  # Should use summary route
 ```
 {% endcode %}
 
