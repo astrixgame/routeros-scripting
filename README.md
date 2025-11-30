@@ -1,4 +1,4 @@
-# MikroTik scripts and templates
+# RouterOS scripts and templates
 Collection of Jinja2 interactive templates and RouterOS RSC scripts for configuration automation. 
 Includes modular Bash scripts for user-driven generation of MikroTik configs, 
 focusing on scalability, reusability, and rapid deployment.
